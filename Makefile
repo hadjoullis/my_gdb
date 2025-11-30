@@ -1,27 +1,35 @@
-# Define the compiler and compiler flags
-CC = gcc
-CFLAGS = -Wall -Werror -O0
-LIBS = -lelf -lcapstone
+CC      = gcc
+CFLAGS  = -Wall -Werror -O0 -MMD -MP
+LIBS    = -lelf -lcapstone
 
-# Define the source files and the object files
-SRC_FILES = mdb.c util.c commands.c
-OBJ_FILES = $(SRC_FILES:.c=.o)
+BUILD   = build
+INCLUDE = include
 
-# Define the target executable
-TARGET = a.out
+SRCS    = $(wildcard src/*.c)
+OBJS    = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
+DEPS    = $(OBJS:.o=.d)
 
-# Build the executable
-$(TARGET): $(OBJ_FILES)
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBS) 
+TARGET  = mdb.out
 
-# Compile source files into object files
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+-include $(DEPS)
 
-# Debug target for use with GDB
-debug: CFLAGS += -ggdb -DDEBUG
+# --- Primary Targets ---
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+
+$(BUILD)/%.o: src/%.c
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+# --- Utility Targets ---
+
+debug: CFLAGS += -ggdb3 -DDEBUG
 debug: clean $(TARGET)
 
-# Clean the project (remove object files and the executable)
 clean:
-	rm -f $(OBJ_FILES) $(TARGET)
+	@rm -rf $(BUILD)
+
+.PHONY: all debug clean

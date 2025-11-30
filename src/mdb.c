@@ -1,5 +1,5 @@
-#include "commands.h"
-#include "util.h"
+#include <commands.h>
+#include <util.h>
 
 void command_prompt(char **argv, function_t *functions);
 

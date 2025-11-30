@@ -1,4 +1,4 @@
-#include "commands.h"
+#include <commands.h>
 
 command_t commands[] = {{"b", breakpoint},
                         {"breakpoint", breakpoint},
