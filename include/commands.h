@@ -1,10 +1,10 @@
 #ifndef _H_COMMAND
 #define _H_COMMAND
 
-#include "util.h"
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <util.h>
 
 #define BREAKPOINT_BASE 256
 #define MAX_INSTRUCTIONS 11
@@ -12,16 +12,16 @@
 #define INSTRUCTIONS_BUF (MAX_READS * 19) + 1
 
 typedef struct {
-  const char *command;
-  void (*function)(pid_t, char *, function_t *);
+    const char *command;
+    void (*function)(pid_t, char *, function_t *);
 } command_t;
 
 typedef struct {
-  Elf64_Addr *addr;
-  long *bytes;
-  bool *active;
-  int size;
-  int current;
+    Elf64_Addr *addr;
+    long *bytes;
+    bool *active;
+    int size;
+    int current;
 } breakpoint_t;
 
 extern command_t commands[];

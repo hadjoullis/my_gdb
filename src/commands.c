@@ -14,576 +14,577 @@ command_t commands[] = {{"b", breakpoint},
 static breakpoint_t breakpoints = {NULL, NULL, 0, 0};
 
 static Elf64_Addr find_addr(function_t *functions, char *symbol) {
-  int i = 0;
-  while (functions[i].func_name != NULL) {
-    if (strcmp(functions[i].func_name, symbol) == 0) {
-      return functions[i].addr;
+    int i = 0;
+    while (functions[i].func_name != NULL) {
+        if (strcmp(functions[i].func_name, symbol) == 0) {
+            return functions[i].addr;
+        }
+        i++;
     }
-    i++;
-  }
-  return 0;
+    return 0;
 }
 
 static bool is_active_breakpoint(Elf64_Addr addr) {
-  int i;
-  for (i = 0; i < breakpoints.current; i++) {
-    if (breakpoints.addr[i] == addr && breakpoints.active[i]) {
-      return true;
+    int i;
+    for (i = 0; i < breakpoints.current; i++) {
+        if (breakpoints.addr[i] == addr && breakpoints.active[i]) {
+            return true;
+        }
     }
-  }
-  return false;
+    return false;
 }
 
 static bool is_set_breakpoint(Elf64_Addr addr) {
-  int i;
-  for (i = 0; i < breakpoints.current; i++) {
-    if (breakpoints.addr[i] == addr && breakpoints.bytes[i] != -1) {
-      return true;
+    int i;
+    for (i = 0; i < breakpoints.current; i++) {
+        if (breakpoints.addr[i] == addr && breakpoints.bytes[i] != -1) {
+            return true;
+        }
     }
-  }
-  return false;
+    return false;
 }
 
 static int get_breakpoint_index(Elf64_Addr addr) {
-  int i;
-  for (i = 0; i < breakpoints.current; i++) {
-    if (breakpoints.addr[i] == addr) {
-      return i;
+    int i;
+    for (i = 0; i < breakpoints.current; i++) {
+        if (breakpoints.addr[i] == addr) {
+            return i;
+        }
     }
-  }
-  return -1;
+    return -1;
 }
 
 static void get_instruction(Elf64_Addr addr, long *instruction, int *index) {
-  int i;
-  for (i = 0; i < breakpoints.current; i++) {
-    if (breakpoints.addr[i] == addr) {
-      *instruction = breakpoints.bytes[i];
-      *index = i;
-      return;
+    int i;
+    for (i = 0; i < breakpoints.current; i++) {
+        if (breakpoints.addr[i] == addr) {
+            *instruction = breakpoints.bytes[i];
+            *index = i;
+            return;
+        }
     }
-  }
-  *instruction = -1;
-  *index = -1;
+    *instruction = -1;
+    *index = -1;
 }
 
 static void refresh_previous_breakpoints(pid_t pid, Elf64_Addr addr) {
-  // breakpoints in range of previous 8 bytes need to be update
-  // to include new breakpoint (int3)
-  int offset;
-  for (offset = 1; offset < sizeof(long); offset++) {
-    if (!is_set_breakpoint(addr - offset)) {
-      continue;
+    // breakpoints in range of previous 8 bytes need to be update
+    // to include new breakpoint (int3)
+    int offset;
+    for (offset = 1; offset < sizeof(long); offset++) {
+        if (!is_set_breakpoint(addr - offset)) {
+            continue;
+        }
+        long current_state =
+            ptrace(PTRACE_PEEKDATA, pid, (void *)addr - offset, 0);
+        if (current_state == -1) {
+            die("(refresh_previous_breakpoints: peekdata) %s", strerror(errno));
+        }
+        int index = get_breakpoint_index(addr - offset);
+        breakpoints.bytes[index] = (current_state & 0xFFFFFFFFFFFFFF00) |
+                                   (breakpoints.bytes[index] & 0xFF);
     }
-    long current_state = ptrace(PTRACE_PEEKDATA, pid, (void *)addr - offset, 0);
-    if (current_state == -1) {
-      die("(refresh_previous_breakpoints: peekdata) %s", strerror(errno));
-    }
-    int index = get_breakpoint_index(addr - offset);
-    breakpoints.bytes[index] = (current_state & 0xFFFFFFFFFFFFFF00) |
-                               (breakpoints.bytes[index] & 0xFF);
-  }
 }
 
 static void maintain_next_breakpoints(pid_t pid, Elf64_Addr addr) {
-  // check next 7 bytes for breakpoints
-  int offset;
-  for (offset = 1; offset < sizeof(long); offset++) {
-    if (!is_set_breakpoint(addr + offset)) {
-      continue;
-    }
-    // Insert the breakpoint
-    long instruction;
-    int index;
-    get_instruction(addr + offset, &instruction, &index);
+    // check next 7 bytes for breakpoints
+    int offset;
+    for (offset = 1; offset < sizeof(long); offset++) {
+        if (!is_set_breakpoint(addr + offset)) {
+            continue;
+        }
+        // Insert the breakpoint
+        long instruction;
+        int index;
+        get_instruction(addr + offset, &instruction, &index);
 
-    long trap = (instruction & 0xFFFFFFFFFFFFFF00) | 0xCC;
-    if (ptrace(PTRACE_POKEDATA, pid, (void *)addr + offset, (void *)trap) ==
-        -1) {
-      die("(maintain_next_breakpoints: pokedata) %s", strerror(errno));
+        long trap = (instruction & 0xFFFFFFFFFFFFFF00) | 0xCC;
+        if (ptrace(PTRACE_POKEDATA, pid, (void *)addr + offset, (void *)trap) ==
+            -1) {
+            die("(maintain_next_breakpoints: pokedata) %s", strerror(errno));
+        }
     }
-  }
 }
 
 static void new_breakpoint(Elf64_Addr addr, long bytes) {
-  if (breakpoints.size == 0) {
-    breakpoints.current = 0;
-    breakpoints.size = BREAKPOINT_BASE;
-    breakpoints.addr = malloc(BREAKPOINT_BASE * sizeof(Elf64_Addr));
-    breakpoints.bytes = malloc(BREAKPOINT_BASE * sizeof(long));
-    breakpoints.active = malloc(BREAKPOINT_BASE * sizeof(bool));
+    if (breakpoints.size == 0) {
+        breakpoints.current = 0;
+        breakpoints.size = BREAKPOINT_BASE;
+        breakpoints.addr = malloc(BREAKPOINT_BASE * sizeof(Elf64_Addr));
+        breakpoints.bytes = malloc(BREAKPOINT_BASE * sizeof(long));
+        breakpoints.active = malloc(BREAKPOINT_BASE * sizeof(bool));
 
-    if (breakpoints.addr == NULL || breakpoints.bytes == NULL ||
-        breakpoints.active == NULL) {
-      die("(new_breakpoint: malloc) %s", strerror(errno));
-    }
-  }
-
-  int i;
-  for (i = 0; i < breakpoints.current; i++) {
-    if (breakpoints.addr[i] == addr) {
-      fprintf(stderr, "breakpoint already found at given address\n");
-      return;
-    }
-  }
-
-  if (breakpoints.current == breakpoints.size) {
-    Elf64_Addr *addr_temp =
-        realloc(breakpoints.addr, sizeof(Elf64_Addr) * breakpoints.size * 2);
-    long *bytes_temp =
-        realloc(breakpoints.bytes, sizeof(long) * breakpoints.size * 2);
-    bool *active_temp =
-        realloc(breakpoints.active, sizeof(bool) * breakpoints.size * 2);
-    if (addr_temp == NULL || bytes_temp == NULL || active_temp == NULL) {
-      die("(new_breakpoint: realloc) %s", strerror(errno));
+        if (breakpoints.addr == NULL || breakpoints.bytes == NULL ||
+            breakpoints.active == NULL) {
+            die("(new_breakpoint: malloc) %s", strerror(errno));
+        }
     }
 
-    breakpoints.addr = addr_temp;
-    breakpoints.bytes = bytes_temp;
-    breakpoints.active = active_temp;
-  }
+    int i;
+    for (i = 0; i < breakpoints.current; i++) {
+        if (breakpoints.addr[i] == addr) {
+            fprintf(stderr, "breakpoint already found at given address\n");
+            return;
+        }
+    }
 
-  breakpoints.addr[breakpoints.current] = addr;
-  breakpoints.bytes[breakpoints.current] = bytes;
-  breakpoints.active[breakpoints.current] = false;
-  breakpoints.current++;
-  fprintf(stderr, "Breakpoint %d at 0x%lx\n", breakpoints.current - 1, addr);
+    if (breakpoints.current == breakpoints.size) {
+        Elf64_Addr *addr_temp = realloc(
+            breakpoints.addr, sizeof(Elf64_Addr) * breakpoints.size * 2);
+        long *bytes_temp =
+            realloc(breakpoints.bytes, sizeof(long) * breakpoints.size * 2);
+        bool *active_temp =
+            realloc(breakpoints.active, sizeof(bool) * breakpoints.size * 2);
+        if (addr_temp == NULL || bytes_temp == NULL || active_temp == NULL) {
+            die("(new_breakpoint: realloc) %s", strerror(errno));
+        }
+
+        breakpoints.addr = addr_temp;
+        breakpoints.bytes = bytes_temp;
+        breakpoints.active = active_temp;
+    }
+
+    breakpoints.addr[breakpoints.current] = addr;
+    breakpoints.bytes[breakpoints.current] = bytes;
+    breakpoints.active[breakpoints.current] = false;
+    breakpoints.current++;
+    fprintf(stderr, "Breakpoint %d at 0x%lx\n", breakpoints.current - 1, addr);
 }
 
 void breakpoint(pid_t pid, char *buffer, function_t *functions) {
-  // convert possible symbol into address
-  // initialize b *addr
-  // offset points to last space in buffer
-  size_t buf_offset = strrchr(buffer, ' ') - buffer;
-  Elf64_Addr addr = (Elf64_Addr)strtol(buffer + buf_offset + 2, NULL, 16);
+    // convert possible symbol into address
+    // initialize b *addr
+    // offset points to last space in buffer
+    size_t buf_offset = strrchr(buffer, ' ') - buffer;
+    Elf64_Addr addr = (Elf64_Addr)strtol(buffer + buf_offset + 2, NULL, 16);
 
-  if (buffer[buf_offset + 1] != '*' &&
-      (addr = find_addr(functions, buffer + buf_offset + 1)) == 0) {
-    fprintf(stderr, "symbol not found\n");
-    return;
-  }
+    if (buffer[buf_offset + 1] != '*' &&
+        (addr = find_addr(functions, buffer + buf_offset + 1)) == 0) {
+        fprintf(stderr, "symbol not found\n");
+        return;
+    }
 
-  if (pid == 0) {
-    new_breakpoint(addr, -1);
-    return;
-  }
+    if (pid == 0) {
+        new_breakpoint(addr, -1);
+        return;
+    }
 
-  long previous_code = ptrace(PTRACE_PEEKDATA, pid, (void *)addr, 0);
-  if (previous_code == -1) {
-    die("(breakpoint: peekdata) %s", strerror(errno));
-  }
-  new_breakpoint(addr, previous_code);
-  /* Insert the breakpoint. */
-  long trap = (previous_code & 0xFFFFFFFFFFFFFF00) | 0xCC;
-  if (ptrace(PTRACE_POKEDATA, pid, (void *)addr, (void *)trap) == -1) {
-    die("(breakpoint: pokedata) %s", strerror(errno));
-  }
-  refresh_previous_breakpoints(pid, addr);
-  maintain_next_breakpoints(pid, addr);
+    long previous_code = ptrace(PTRACE_PEEKDATA, pid, (void *)addr, 0);
+    if (previous_code == -1) {
+        die("(breakpoint: peekdata) %s", strerror(errno));
+    }
+    new_breakpoint(addr, previous_code);
+    /* Insert the breakpoint. */
+    long trap = (previous_code & 0xFFFFFFFFFFFFFF00) | 0xCC;
+    if (ptrace(PTRACE_POKEDATA, pid, (void *)addr, (void *)trap) == -1) {
+        die("(breakpoint: pokedata) %s", strerror(errno));
+    }
+    refresh_previous_breakpoints(pid, addr);
+    maintain_next_breakpoints(pid, addr);
 }
 
 void list(pid_t pid, char *buffer, function_t *functions) {
-  int i;
-  for (i = 0; i < breakpoints.current; i++) {
-    printf("\t%d: 0x%lx\tactive: %d\n", i, breakpoints.addr[i],
-           breakpoints.active[i]);
-  }
+    int i;
+    for (i = 0; i < breakpoints.current; i++) {
+        printf("\t%d: 0x%lx\tactive: %d\n", i, breakpoints.addr[i],
+               breakpoints.active[i]);
+    }
 }
 
 void delete_br(pid_t pid, char *buffer, function_t *functions) {
-  int index = atoi(strrchr(buffer, ' ') + 1);
-  if (index >= breakpoints.current) {
-    fprintf(stderr, "breakpoint does not exist\n");
-    return;
-  }
-
-  if (pid != 0) {
-    // correct instruction
-    if (ptrace(PTRACE_POKEDATA, pid, (void *)breakpoints.addr[index],
-               (void *)breakpoints.bytes[index]) == -1) {
-      die("(delete_br: pokedata) %s", strerror(errno));
+    int index = atoi(strrchr(buffer, ' ') + 1);
+    if (index >= breakpoints.current) {
+        fprintf(stderr, "breakpoint does not exist\n");
+        return;
     }
-    // if breakpoint is active, i need to fix rip now, since it won't be fixed
-    // later
-    if (is_active_breakpoint(breakpoints.addr[index])) {
-      struct user_regs_struct regs;
 
-      if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-        die("(serve_breakpoint: getregs) %s", strerror(errno));
-      }
+    if (pid != 0) {
+        // correct instruction
+        if (ptrace(PTRACE_POKEDATA, pid, (void *)breakpoints.addr[index],
+                   (void *)breakpoints.bytes[index]) == -1) {
+            die("(delete_br: pokedata) %s", strerror(errno));
+        }
+        // if breakpoint is active, i need to fix rip now, since it won't be
+        // fixed later
+        if (is_active_breakpoint(breakpoints.addr[index])) {
+            struct user_regs_struct regs;
 
-      regs.rip--;
+            if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+                die("(serve_breakpoint: getregs) %s", strerror(errno));
+            }
 
-      if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
-        die("(serve_breakpoint: setregs) %s", strerror(errno));
-      }
+            regs.rip--;
+
+            if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
+                die("(serve_breakpoint: setregs) %s", strerror(errno));
+            }
+        }
+        refresh_previous_breakpoints(pid, breakpoints.addr[index]);
+        maintain_next_breakpoints(pid, breakpoints.addr[index]);
     }
-    refresh_previous_breakpoints(pid, breakpoints.addr[index]);
-    maintain_next_breakpoints(pid, breakpoints.addr[index]);
-  }
 
-  int i;
-  for (i = index; i < breakpoints.current - 1; i++) {
-    breakpoints.addr[i] = breakpoints.addr[i + 1];
-    breakpoints.bytes[i] = breakpoints.bytes[i + 1];
-    breakpoints.active[i] = breakpoints.active[i + 1];
-  }
-  if (breakpoints.current == 1) {
-    breakpoints.addr[i] = 0;
-    breakpoints.bytes[i] = -1;
-    breakpoints.bytes[i] = false;
-  }
-  breakpoints.current--;
+    int i;
+    for (i = index; i < breakpoints.current - 1; i++) {
+        breakpoints.addr[i] = breakpoints.addr[i + 1];
+        breakpoints.bytes[i] = breakpoints.bytes[i + 1];
+        breakpoints.active[i] = breakpoints.active[i + 1];
+    }
+    if (breakpoints.current == 1) {
+        breakpoints.addr[i] = 0;
+        breakpoints.bytes[i] = -1;
+        breakpoints.bytes[i] = false;
+    }
+    breakpoints.current--;
 }
 
 static void serve_breakpoint(pid_t pid) {
-  struct user_regs_struct regs;
+    struct user_regs_struct regs;
 
-  if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-    die("(serve_breakpoint: getregs) %s", strerror(errno));
-  }
-
-  Elf64_Addr addr = (--regs.rip);
-  if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
-    die("(serve_breakpoint: setregs) %s", strerror(errno));
-  }
-
-  long instruction = 0;
-  int index = 0;
-  get_instruction(addr, &instruction, &index);
-  if (instruction == -1 || index == -1) {
-    die("(serve_breakpoint) original instruction not found");
-  }
-  breakpoints.active[index] = false;
-
-  if (ptrace(PTRACE_POKEDATA, pid, (void *)addr, (void *)instruction) == -1) {
-    die("(serve_breakpoint: pokedata) %s", strerror(errno));
-  }
-
-  if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
-    die("(serve_breakpoint: singlestep) %s", strerror(errno));
-  }
-
-  if (waitpid(pid, NULL, 0) == -1) {
-    die("(waitpid) %s", strerror(errno));
-  }
-
-  /* Insert the breakpoint. */
-  long trap = (instruction & 0xFFFFFFFFFFFFFF00) | 0xCC;
-  if (ptrace(PTRACE_POKEDATA, pid, (void *)addr, (void *)trap) == -1) {
-    die("(serve_breakpoint: pokedata) %s", strerror(errno));
-  }
-}
-
-static void fix_buffer(unsigned char *instructions, int base, Elf64_Addr addr) {
-  // fix interrupts into actual instructions
-  int offset;
-  for (offset = 0; offset < sizeof(long); offset++) {
-    if (is_set_breakpoint(addr + offset)) {
-      int index = get_breakpoint_index(addr + offset);
-      instructions[base + offset] = (breakpoints.bytes[index] & 0xFF);
+    if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+        die("(serve_breakpoint: getregs) %s", strerror(errno));
     }
-  }
-}
 
-static void disas(pid_t pid, Elf64_Addr addr) {
-  csh handle;
-  if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
-    die("(disas: cs_open) %s", cs_strerror(cs_errno(handle)));
-  }
-  cs_option(handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
-
-  unsigned char instructions[INSTRUCTIONS_BUF] = "";
-  long instruction;
-  int i, offset;
-  for (i = 0, offset = 0; i < MAX_READS; i++, offset += sizeof(instruction)) {
-    instruction = ptrace(PTRACE_PEEKDATA, pid, (void *)(addr + offset), 0);
-    if (instruction == -1) {
-      die("(disas: peekdata) %s", strerror(errno));
+    Elf64_Addr addr = (--regs.rip);
+    if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
+        die("(serve_breakpoint: setregs) %s", strerror(errno));
     }
-    memcpy(instructions + offset, &instruction, sizeof(instruction));
-    fix_buffer(instructions, offset, addr + offset);
-  }
 
-  cs_insn *insn;
-  size_t count;
-  count = cs_disasm(handle, (void *)instructions, offset, addr, 0, &insn);
-
-  if (count <= 0) {
-    die("(disas: cs_disasm) failed to disassemble code");
-  }
-
-  fprintf(stderr, ">");
-  int j;
-  for (j = 0; j < count && j < MAX_INSTRUCTIONS; j++) {
-    fprintf(stderr, "\t0x%lx: ", insn[j].address);
-    fprintf(stderr, "\t%s\t%s\n", insn[j].mnemonic, insn[j].op_str);
-    if (insn[j].id == X86_INS_RET || insn[j].id == X86_INS_RETF ||
-        insn[j].id == X86_INS_RETFQ) {
-      break;
+    long instruction = 0;
+    int index = 0;
+    get_instruction(addr, &instruction, &index);
+    if (instruction == -1 || index == -1) {
+        die("(serve_breakpoint) original instruction not found");
     }
-  }
+    breakpoints.active[index] = false;
 
-  cs_free(insn, count);
-  cs_close(&handle);
-}
-
-void disas_wrapper(pid_t pid, char *buffer, function_t *functions) {
-  if (pid == 0) {
-    fprintf(stderr, "The program is not being run\n");
-    return;
-  }
-  struct user_regs_struct regs;
-  if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-    die("(disas_wrapper: getregs) %s", strerror(errno));
-  }
-
-  Elf64_Addr addr = regs.rip;
-  if (is_active_breakpoint(addr - 1)) {
-    addr--;
-  }
-  disas(pid, addr);
-}
-
-static void unset_breakpoints() {
-  int i;
-  for (i = 0; i < breakpoints.current; i++) {
-    breakpoints.bytes[i] = -1;
-    breakpoints.active[i] = false;
-  }
-}
-
-static void load_breakpoints(pid_t pid) {
-  int i;
-  Elf64_Addr addr;
-  long instruction;
-  for (i = 0; i < breakpoints.current; i++) {
-    addr = breakpoints.addr[i];
-
-    instruction = ptrace(PTRACE_PEEKDATA, pid, (void *)addr, 0);
-    if (instruction == -1) {
-      die("(load_breakpoints: peekdata) %s", strerror(errno));
+    if (ptrace(PTRACE_POKEDATA, pid, (void *)addr, (void *)instruction) == -1) {
+        die("(serve_breakpoint: pokedata) %s", strerror(errno));
     }
-    breakpoints.bytes[i] = instruction;
+
+    if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
+        die("(serve_breakpoint: singlestep) %s", strerror(errno));
+    }
+
+    if (waitpid(pid, NULL, 0) == -1) {
+        die("(waitpid) %s", strerror(errno));
+    }
 
     /* Insert the breakpoint. */
     long trap = (instruction & 0xFFFFFFFFFFFFFF00) | 0xCC;
     if (ptrace(PTRACE_POKEDATA, pid, (void *)addr, (void *)trap) == -1) {
-      die("(load_breakpoints: pokedata) %s", strerror(errno));
+        die("(serve_breakpoint: pokedata) %s", strerror(errno));
     }
-    refresh_previous_breakpoints(pid, addr);
-    maintain_next_breakpoints(pid, addr);
-  }
+}
+
+static void fix_buffer(unsigned char *instructions, int base, Elf64_Addr addr) {
+    // fix interrupts into actual instructions
+    int offset;
+    for (offset = 0; offset < sizeof(long); offset++) {
+        if (is_set_breakpoint(addr + offset)) {
+            int index = get_breakpoint_index(addr + offset);
+            instructions[base + offset] = (breakpoints.bytes[index] & 0xFF);
+        }
+    }
+}
+
+static void disas(pid_t pid, Elf64_Addr addr) {
+    csh handle;
+    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+        die("(disas: cs_open) %s", cs_strerror(cs_errno(handle)));
+    }
+    cs_option(handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
+
+    unsigned char instructions[INSTRUCTIONS_BUF] = "";
+    long instruction;
+    int i, offset;
+    for (i = 0, offset = 0; i < MAX_READS; i++, offset += sizeof(instruction)) {
+        instruction = ptrace(PTRACE_PEEKDATA, pid, (void *)(addr + offset), 0);
+        if (instruction == -1) {
+            die("(disas: peekdata) %s", strerror(errno));
+        }
+        memcpy(instructions + offset, &instruction, sizeof(instruction));
+        fix_buffer(instructions, offset, addr + offset);
+    }
+
+    cs_insn *insn;
+    size_t count;
+    count = cs_disasm(handle, (void *)instructions, offset, addr, 0, &insn);
+
+    if (count <= 0) {
+        die("(disas: cs_disasm) failed to disassemble code");
+    }
+
+    fprintf(stderr, ">");
+    int j;
+    for (j = 0; j < count && j < MAX_INSTRUCTIONS; j++) {
+        fprintf(stderr, "\t0x%lx: ", insn[j].address);
+        fprintf(stderr, "\t%s\t%s\n", insn[j].mnemonic, insn[j].op_str);
+        if (insn[j].id == X86_INS_RET || insn[j].id == X86_INS_RETF ||
+            insn[j].id == X86_INS_RETFQ) {
+            break;
+        }
+    }
+
+    cs_free(insn, count);
+    cs_close(&handle);
+}
+
+void disas_wrapper(pid_t pid, char *buffer, function_t *functions) {
+    if (pid == 0) {
+        fprintf(stderr, "The program is not being run\n");
+        return;
+    }
+    struct user_regs_struct regs;
+    if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+        die("(disas_wrapper: getregs) %s", strerror(errno));
+    }
+
+    Elf64_Addr addr = regs.rip;
+    if (is_active_breakpoint(addr - 1)) {
+        addr--;
+    }
+    disas(pid, addr);
+}
+
+static void unset_breakpoints() {
+    int i;
+    for (i = 0; i < breakpoints.current; i++) {
+        breakpoints.bytes[i] = -1;
+        breakpoints.active[i] = false;
+    }
+}
+
+static void load_breakpoints(pid_t pid) {
+    int i;
+    Elf64_Addr addr;
+    long instruction;
+    for (i = 0; i < breakpoints.current; i++) {
+        addr = breakpoints.addr[i];
+
+        instruction = ptrace(PTRACE_PEEKDATA, pid, (void *)addr, 0);
+        if (instruction == -1) {
+            die("(load_breakpoints: peekdata) %s", strerror(errno));
+        }
+        breakpoints.bytes[i] = instruction;
+
+        /* Insert the breakpoint. */
+        long trap = (instruction & 0xFFFFFFFFFFFFFF00) | 0xCC;
+        if (ptrace(PTRACE_POKEDATA, pid, (void *)addr, (void *)trap) == -1) {
+            die("(load_breakpoints: pokedata) %s", strerror(errno));
+        }
+        refresh_previous_breakpoints(pid, addr);
+        maintain_next_breakpoints(pid, addr);
+    }
 }
 
 pid_t run(pid_t pid, char **argv) {
-  if (pid != 0) {
-    kill(pid, SIGKILL);
-    unset_breakpoints();
-  }
-
-  /* fork() for executing the program that is analyzed.  */
-  pid = fork();
-  switch (pid) {
-  case -1: /* error */
-    die("(run: fork) %s", strerror(errno));
-  case 0:
-    // child
-    ptrace(PTRACE_TRACEME, 0, 0, 0);
-    execvp(argv[0], &argv[0]);
-    die("(run: execvp) %s", strerror(errno));
-  }
-  // parent
-  ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_EXITKILL);
-  waitpid(pid, NULL, 0);
-
-  load_breakpoints(pid);
-
-  if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
-    die("(run: cont) %s", strerror(errno));
-  }
-
-  int status;
-  waitpid(pid, &status, 0);
-
-  if (WIFEXITED(status)) {
-    unset_breakpoints();
-    fprintf(stderr, "process %u exited with code %d\n", pid,
-            WEXITSTATUS(status));
-    return 0;
-  }
-
-#ifdef DEBUG
-  if (WIFSIGNALED(status)) {
-    unset_breakpoints();
-    fprintf(stderr, "process %u was terminated with signal %s\n", pid,
-            strsignal(WTERMSIG(status)));
-    // exit(EXIT_SUCCESS);
-    return 0;
-  }
-#endif
-
-  if (WIFSTOPPED(status)) {
-#ifdef DEBUG
-    fprintf(stderr, "process %u was stopped with signal %s\n", pid,
-            strsignal(WSTOPSIG(status)));
-#endif
-    struct user_regs_struct regs;
-    if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-      die("(run: getregs) %s", strerror(errno));
+    if (pid != 0) {
+        kill(pid, SIGKILL);
+        unset_breakpoints();
     }
 
-    Elf64_Addr addr = regs.rip - 1;
-    int index = get_breakpoint_index(addr);
-    breakpoints.active[index] = true;
-    printf("Breakpoint %d, 0x%lx\n", index, addr);
-    disas(pid, addr);
-  }
+    /* fork() for executing the program that is analyzed.  */
+    pid = fork();
+    switch (pid) {
+    case -1: /* error */
+        die("(run: fork) %s", strerror(errno));
+    case 0:
+        // child
+        ptrace(PTRACE_TRACEME, 0, 0, 0);
+        execvp(argv[0], &argv[0]);
+        die("(run: execvp) %s", strerror(errno));
+    }
+    // parent
+    ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_EXITKILL);
+    waitpid(pid, NULL, 0);
 
-  return pid;
+    load_breakpoints(pid);
+
+    if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+        die("(run: cont) %s", strerror(errno));
+    }
+
+    int status;
+    waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status)) {
+        unset_breakpoints();
+        fprintf(stderr, "process %u exited with code %d\n", pid,
+                WEXITSTATUS(status));
+        return 0;
+    }
+
+#ifdef DEBUG
+    if (WIFSIGNALED(status)) {
+        unset_breakpoints();
+        fprintf(stderr, "process %u was terminated with signal %s\n", pid,
+                strsignal(WTERMSIG(status)));
+        // exit(EXIT_SUCCESS);
+        return 0;
+    }
+#endif
+
+    if (WIFSTOPPED(status)) {
+#ifdef DEBUG
+        fprintf(stderr, "process %u was stopped with signal %s\n", pid,
+                strsignal(WSTOPSIG(status)));
+#endif
+        struct user_regs_struct regs;
+        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+            die("(run: getregs) %s", strerror(errno));
+        }
+
+        Elf64_Addr addr = regs.rip - 1;
+        int index = get_breakpoint_index(addr);
+        breakpoints.active[index] = true;
+        printf("Breakpoint %d, 0x%lx\n", index, addr);
+        disas(pid, addr);
+    }
+
+    return pid;
 }
 
 pid_t cont(pid_t pid) {
-  if (pid == 0) {
-    fprintf(stderr, "The program is not being run\n");
-    return 0;
-  }
-
-  struct user_regs_struct regs;
-
-  if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-    die("(cont: getregs) %s", strerror(errno));
-  }
-
-  // len of int3 is 1 byte
-  Elf64_Addr addr = regs.rip - 1;
-  if (is_active_breakpoint(addr)) {
-    serve_breakpoint(pid);
-    maintain_next_breakpoints(pid, addr);
-  }
-  if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
-    die("(run: cont) %s", strerror(errno));
-  }
-
-  int status;
-  waitpid(pid, &status, 0);
-
-  if (WIFEXITED(status)) {
-    unset_breakpoints();
-    fprintf(stderr, "process %u exited with code %d\n", pid,
-            WEXITSTATUS(status));
-    return 0;
-  }
-
-#ifdef DEBUG
-  if (WIFSIGNALED(status)) {
-    unset_breakpoints();
-    fprintf(stderr, "process %u was terminated with signal %s\n", pid,
-            strsignal(WTERMSIG(status)));
-    // exit(EXIT_SUCCESS);
-    return 0;
-  }
-#endif
-
-  if (WIFSTOPPED(status)) {
-#ifdef DEBUG
-    fprintf(stderr, "process %u was stopped with signal %s\n", pid,
-            strsignal(WSTOPSIG(status)));
-#endif
-    struct user_regs_struct regs;
-    if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-      die("(cont: getregs) %s", strerror(errno));
+    if (pid == 0) {
+        fprintf(stderr, "The program is not being run\n");
+        return 0;
     }
 
+    struct user_regs_struct regs;
+
+    if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+        die("(cont: getregs) %s", strerror(errno));
+    }
+
+    // len of int3 is 1 byte
     Elf64_Addr addr = regs.rip - 1;
-    int index = get_breakpoint_index(addr);
-    breakpoints.active[index] = true;
-    printf("Breakpoint %d, 0x%lx\n", index, addr);
-  }
-  return pid;
+    if (is_active_breakpoint(addr)) {
+        serve_breakpoint(pid);
+        maintain_next_breakpoints(pid, addr);
+    }
+    if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+        die("(run: cont) %s", strerror(errno));
+    }
+
+    int status;
+    waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status)) {
+        unset_breakpoints();
+        fprintf(stderr, "process %u exited with code %d\n", pid,
+                WEXITSTATUS(status));
+        return 0;
+    }
+
+#ifdef DEBUG
+    if (WIFSIGNALED(status)) {
+        unset_breakpoints();
+        fprintf(stderr, "process %u was terminated with signal %s\n", pid,
+                strsignal(WTERMSIG(status)));
+        // exit(EXIT_SUCCESS);
+        return 0;
+    }
+#endif
+
+    if (WIFSTOPPED(status)) {
+#ifdef DEBUG
+        fprintf(stderr, "process %u was stopped with signal %s\n", pid,
+                strsignal(WSTOPSIG(status)));
+#endif
+        struct user_regs_struct regs;
+        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+            die("(cont: getregs) %s", strerror(errno));
+        }
+
+        Elf64_Addr addr = regs.rip - 1;
+        int index = get_breakpoint_index(addr);
+        breakpoints.active[index] = true;
+        printf("Breakpoint %d, 0x%lx\n", index, addr);
+    }
+    return pid;
 }
 
 void quit(pid_t pid, char *buffer, function_t *functions) {
-  exit(EXIT_SUCCESS);
+    exit(EXIT_SUCCESS);
 }
 
 pid_t single_instruction(pid_t pid) {
-  if (pid == 0) {
-    fprintf(stderr, "The program is not being run\n");
-    return 0;
-  }
-
-  struct user_regs_struct regs;
-  if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-    die("%s", strerror(errno));
-  }
-
-  if (is_active_breakpoint(regs.rip - 1)) {
-    serve_breakpoint(pid);
-    maintain_next_breakpoints(pid, regs.rip - 1);
-
-    if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-      die("%s", strerror(errno));
+    if (pid == 0) {
+        fprintf(stderr, "The program is not being run\n");
+        return 0;
     }
-    if (is_set_breakpoint(regs.rip)) {
-      int index = get_breakpoint_index(regs.rip);
-      breakpoints.active[index] = true;
-      printf("Breakpoint %d, 0x%llx\n", index, regs.rip);
-      // maintain concept of active
-      regs.rip++;
-      if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
-        die("(cont: getregs) %s", strerror(errno));
-      }
-    }
-    return pid;
-  }
 
-  if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
-    die("(singlestep) %s", strerror(errno));
-  }
-
-  int status;
-  waitpid(pid, &status, 0);
-
-  if (WIFEXITED(status)) {
-    unset_breakpoints();
-    fprintf(stderr, "process %u exited with code %d\n", pid,
-            WEXITSTATUS(status));
-    return 0;
-  }
-
-#ifdef DEBUG
-  if (WIFSIGNALED(status)) {
-    unset_breakpoints();
-    fprintf(stderr, "process %u was terminated with signal %s\n", pid,
-            strsignal(WTERMSIG(status)));
-    // exit(EXIT_SUCCESS);
-    return 0;
-  }
-#endif
-
-  if (WIFSTOPPED(status)) {
-#ifdef DEBUG
-    fprintf(stderr, "process %u was stopped with signal %s\n", pid,
-            strsignal(WSTOPSIG(status)));
-#endif
     struct user_regs_struct regs;
     if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-      die("(cont: getregs) %s", strerror(errno));
+        die("%s", strerror(errno));
     }
-    // something wrong here
-    // is it really active
-    if (is_set_breakpoint(regs.rip)) {
-      int index = get_breakpoint_index(regs.rip);
-      breakpoints.active[index] = true;
-      printf("Breakpoint %d, 0x%llx\n", index, regs.rip);
-      // maintain concept of active
-      regs.rip++;
-      if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
-        die("(cont: getregs) %s", strerror(errno));
-      }
-    }
-  }
 
-  return pid;
+    if (is_active_breakpoint(regs.rip - 1)) {
+        serve_breakpoint(pid);
+        maintain_next_breakpoints(pid, regs.rip - 1);
+
+        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+            die("%s", strerror(errno));
+        }
+        if (is_set_breakpoint(regs.rip)) {
+            int index = get_breakpoint_index(regs.rip);
+            breakpoints.active[index] = true;
+            printf("Breakpoint %d, 0x%llx\n", index, regs.rip);
+            // maintain concept of active
+            regs.rip++;
+            if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
+                die("(cont: getregs) %s", strerror(errno));
+            }
+        }
+        return pid;
+    }
+
+    if (ptrace(PTRACE_SINGLESTEP, pid, 0, 0) == -1) {
+        die("(singlestep) %s", strerror(errno));
+    }
+
+    int status;
+    waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status)) {
+        unset_breakpoints();
+        fprintf(stderr, "process %u exited with code %d\n", pid,
+                WEXITSTATUS(status));
+        return 0;
+    }
+
+#ifdef DEBUG
+    if (WIFSIGNALED(status)) {
+        unset_breakpoints();
+        fprintf(stderr, "process %u was terminated with signal %s\n", pid,
+                strsignal(WTERMSIG(status)));
+        // exit(EXIT_SUCCESS);
+        return 0;
+    }
+#endif
+
+    if (WIFSTOPPED(status)) {
+#ifdef DEBUG
+        fprintf(stderr, "process %u was stopped with signal %s\n", pid,
+                strsignal(WSTOPSIG(status)));
+#endif
+        struct user_regs_struct regs;
+        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+            die("(cont: getregs) %s", strerror(errno));
+        }
+        // something wrong here
+        // is it really active
+        if (is_set_breakpoint(regs.rip)) {
+            int index = get_breakpoint_index(regs.rip);
+            breakpoints.active[index] = true;
+            printf("Breakpoint %d, 0x%llx\n", index, regs.rip);
+            // maintain concept of active
+            regs.rip++;
+            if (ptrace(PTRACE_SETREGS, pid, 0, &regs) == -1) {
+                die("(cont: getregs) %s", strerror(errno));
+            }
+        }
+    }
+
+    return pid;
 }

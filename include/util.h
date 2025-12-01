@@ -26,15 +26,15 @@
 #define TOOL "min_gdb"
 
 #define die(...)                                                               \
-  do {                                                                         \
-    fprintf(stderr, TOOL ": " __VA_ARGS__);                                    \
-    fputc('\n', stderr);                                                       \
-    exit(EXIT_FAILURE);                                                        \
-  } while (0)
+    do {                                                                       \
+        fprintf(stderr, TOOL ": " __VA_ARGS__);                                \
+        fputc('\n', stderr);                                                   \
+        exit(EXIT_FAILURE);                                                    \
+    } while (0)
 
 typedef struct {
-  Elf64_Addr addr;
-  char *func_name;
+    Elf64_Addr addr;
+    char *func_name;
 } function_t;
 
 void load_ELF(char *filename, function_t **functions);
