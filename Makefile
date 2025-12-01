@@ -13,8 +13,6 @@ TARGET  = mdb.out
 
 -include $(DEPS)
 
-# --- Primary Targets ---
-
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
@@ -24,12 +22,21 @@ $(BUILD)/%.o: src/%.c
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
-# --- Utility Targets ---
-
 debug: CFLAGS += -ggdb3 -DDEBUG
 debug: clean $(TARGET)
+
+TEST_DIR    = tests
+TEST_SRCS   = $(wildcard $(TEST_DIR)/*.c)
+TEST_CFLAGS = -no-pie
+TEST_EXES   = $(patsubst $(TEST_DIR)/%.c,$(BUILD)/%.out,$(TEST_SRCS))
+
+tests: $(TEST_EXES)
+
+$(BUILD)/%.out: $(TEST_DIR)/%.c
+	@mkdir -p $(BUILD)
+	$(CC) $(TEST_CFLAGS) $< -o $@
 
 clean:
 	@rm -rf $(BUILD)
 
-.PHONY: all debug clean
+.PHONY: all debug tests clean
