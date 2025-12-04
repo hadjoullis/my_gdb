@@ -1,6 +1,6 @@
 CC      = gcc
-CFLAGS  = -Wall -Werror -O0 -MMD -MP
-LIBS    = -lelf -lcapstone
+CFLAGS  = -Wall -Wextra -O0 -MMD -MP
+LIBS    = -lelf -lcapstone -lreadline
 
 BUILD   = build
 INCLUDE = include
@@ -21,22 +21,27 @@ $(BUILD)/%.o: src/%.c
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
 debug: CFLAGS += -ggdb3 -DDEBUG
-debug: clean $(TARGET)
+debug: clean_build $(TARGET)
 
-TEST_DIR    = tests
-TEST_SRCS   = $(wildcard $(TEST_DIR)/*.c)
+TEST        = tests
+TEST_SRCS   = $(wildcard $(TEST)/*.c)
+TEST_EXES   = $(patsubst $(TEST)/%.c,$(TEST)/%.out,$(TEST_SRCS))
 TEST_CFLAGS = -no-pie
-TEST_EXES   = $(patsubst $(TEST_DIR)/%.c,$(BUILD)/%.out,$(TEST_SRCS))
 
 tests: $(TEST_EXES)
 
-$(BUILD)/%.out: $(TEST_DIR)/%.c
-	@mkdir -p $(BUILD)
+$(TEST)/%.out: $(TEST)/%.c
 	$(CC) $(TEST_CFLAGS) $< -o $@
 
-clean:
+clean_tests:
+	@rm -f $(TEST_EXES)
+
+clean_build:
 	@rm -rf $(BUILD)
 
-.PHONY: all debug tests clean
+clean:
+	@rm -rf $(BUILD) $(TEST)
+
+.PHONY: all debug tests clean clean_build clean_tests
 
 -include $(DEPS)
