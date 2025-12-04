@@ -5,6 +5,7 @@
 Install dependencies:
 - libelf
 - capstone
+- readline
 
 Run:
 ```
