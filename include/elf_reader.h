@@ -1,5 +1,5 @@
-#ifndef _H_UTIL
-#define _H_UTIL
+#ifndef _H_ELF_READER
+#define _H_ELF_READER
 
 /* C standard library */
 #include <errno.h>
@@ -38,7 +38,5 @@ typedef struct {
 } fn_t;
 
 void load_ELF(char *filename, fn_t **fns);
-void check_symtab(Elf *elf, fn_t **fns);
-Elf_Scn *get_elf_section(Elf *elf, char *section);
 
 #endif
