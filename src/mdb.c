@@ -1,10 +1,10 @@
 #include <commands.h>
+#include <elf_reader.h>
 #include <readline/history.h>
 #include <readline/readline.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <util.h>
 
 void command_prompt(char *target, fn_t *fns);
 
@@ -81,7 +81,7 @@ int tokenize_input(char *input, int *argc, char **argv) {
 }
 
 void get_cmd(cmd_t *cmd, cmd_args_t *cmd_args) {
-    while (1) {
+    for (;;) {
         char *input = rl_gets();
         cmd_args->argc = 0;
         int ret = tokenize_input(input, &(cmd_args->argc), cmd_args->argv);
@@ -89,9 +89,11 @@ void get_cmd(cmd_t *cmd, cmd_args_t *cmd_args) {
             continue;
         }
 
-        for (int i = 0; cmd_names[i].name != NULL; i++) {
-            if (strcmp(cmd_names[i].name, cmd_args->argv[0]) == 0) {
-                *cmd = cmd_names[i].cmd;
+        // TODO: create foreach macro to loop this prettier...
+        for (int i = 0; cmd_registry[i].shortname != NULL; i++) {
+            if (strcmp(cmd_registry[i].shortname, cmd_args->argv[0]) == 0 ||
+                strcmp(cmd_registry[i].longname, cmd_args->argv[0]) == 0) {
+                *cmd = cmd_registry[i].cmd;
                 return;
             }
         }
@@ -101,9 +103,9 @@ void get_cmd(cmd_t *cmd, cmd_args_t *cmd_args) {
 
 void command_prompt(char *target, fn_t *fns) {
     cmd_t cmd = NULL;
-    cmd_args_t cmd_args = { .target = target, .fns = fns, .pid = 0};
+    cmd_args_t cmd_args = {.target = target, .fns = fns, .pid = 0};
 
-    while (1) {
+    for (;;) {
         get_cmd(&cmd, &cmd_args);
         cmd(&cmd_args);
     }

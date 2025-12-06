@@ -1,10 +1,10 @@
 #ifndef _H_COMMAND
 #define _H_COMMAND
 
+#include <elf_reader.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include <util.h>
 
 #define MAX_BREAKPOINTS 256
 #define MAX_CMD_LEN 256
@@ -31,11 +31,13 @@ typedef struct {
 typedef void (*cmd_t)(cmd_args_t *cmd_args);
 
 typedef struct {
-    const char *name;
+    const char *shortname;
+    const char *longname;
     cmd_t cmd;
-} cmd_name_t;
+    const char *description;
+} cmd_entry_t;
 
-extern cmd_name_t cmd_names[];
+extern cmd_entry_t cmd_registry[];
 
 void breakpoint(cmd_args_t *cmd_args);
 void list(cmd_args_t *cmd_args);
@@ -44,5 +46,6 @@ void run(cmd_args_t *cmd_args);
 void cont(cmd_args_t *cmd_args);
 void quit(cmd_args_t *cmd_args);
 void disas_wrapper(cmd_args_t *cmd_args);
-void single_instruction(cmd_args_t *cmd_args);
+void stepi(cmd_args_t *cmd_args);
+void help(cmd_args_t *cmd_args);
 #endif

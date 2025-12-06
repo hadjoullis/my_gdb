@@ -1,20 +1,22 @@
 #include <commands.h>
 
-cmd_name_t cmd_names[] = {{"b", breakpoint},
-                          {"break", breakpoint},
-                          {"r", run},
-                          {"run", run},
-                          {"c", cont},
-                          {"continue", cont},
-                          {"si", single_instruction},
-                          {"l", list},
-                          {"list", list},
-                          {"d", delete_break},
-                          {"delete", delete_break},
-                          {"disas", disas_wrapper},
-                          {"q", quit},
-                          {"quit", quit},
-                          {NULL, NULL}};
+// X macro
+#define CMD_ENTRIES                                                            \
+    CMD_ENTRY("b", "break", breakpoint, "Place breakpoint at addr or symbol")  \
+    CMD_ENTRY("c", "continue", cont,                                           \
+              "Continue program being debugged, after signal or breakpoint")   \
+    CMD_ENTRY("d", "delete", delete_break, "Delete specified breakpoint")      \
+    CMD_ENTRY("disas", "disassembly", disas_wrapper,                           \
+              "Disassemble current location")                                  \
+    CMD_ENTRY("h", "help", help, "Display this help message")                  \
+    CMD_ENTRY("l", "list", list, "List current breakpoints")                   \
+    CMD_ENTRY("q", "quit", quit, "Quit program")                               \
+    CMD_ENTRY("r", "run", run, "Run debugged program from start")              \
+    CMD_ENTRY("si", "stepi", stepi, "Step one instruction exactly")
+
+#define CMD_ENTRY(short, long, fn, description) {short, long, fn, description},
+cmd_entry_t cmd_registry[] = {CMD_ENTRIES{NULL, NULL, NULL, NULL}};
+#undef CMD_ENTRY
 
 static breakpoint_t breakpoints = {.len = 0};
 
@@ -131,7 +133,6 @@ static void new_breakpoint(Elf64_Addr addr, long bytes) {
 void breakpoint(cmd_args_t *cmd_args) {
     // convert possible symbol into address
     // initialize b *addr
-    // offset points to last space in buffer
     fn_t *fns = cmd_args->fns;
     pid_t pid = cmd_args->pid;
 
@@ -499,7 +500,7 @@ void quit(cmd_args_t *cmd_args) {
     exit(EXIT_SUCCESS);
 }
 
-void single_instruction(cmd_args_t *cmd_args) {
+void stepi(cmd_args_t *cmd_args) {
     pid_t pid = cmd_args->pid;
     if (pid == 0) {
         fprintf(stderr, "The program is not being run\n");
@@ -578,5 +579,14 @@ void single_instruction(cmd_args_t *cmd_args) {
                 die("(cont: getregs) %s", strerror(errno));
             }
         }
+    }
+}
+
+void help(cmd_args_t *cmd_args) {
+    (void)cmd_args;
+    fprintf(stderr, "Commands -> Action:\n");
+    for (int i = 0; cmd_registry[i].shortname != NULL; i++) {
+        fprintf(stderr, "\t'%s', '%s' -> %s.\n", cmd_registry[i].shortname,
+                cmd_registry[i].longname, cmd_registry[i].description);
     }
 }
