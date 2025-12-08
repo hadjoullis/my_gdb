@@ -80,7 +80,7 @@ void load_ELF(char *filename, fn_t **fns) {
         die("(version) %s", elf_errmsg(-1));
     }
 
-    fd = open(filename, O_RDONLY);
+    fd = open(filename, O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
         perror(filename);
         die("opening file %s", filename);
