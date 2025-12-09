@@ -43,7 +43,8 @@ char *rl_gets() {
     // non-empty input -> add to history
     if (*line_read) {
         if (strlen(line_read) >= MAX_CMD_LEN) {
-            fprintf(stderr, "ERROR: exceeded maximum command length(%d)\n",
+            fprintf(stderr,
+                    "ERROR: (rl_gets) exceeded maximum command length(%d)\n",
                     MAX_CMD_LEN);
             return "";
         }
@@ -70,8 +71,10 @@ int tokenize_input(char *input, int *argc, char **argv) {
     argv[0] = token;
     while ((token = strtok(NULL, delim))) {
         if (*argc == MAX_CMD_ARGC) {
-            fprintf(stderr, "ERROR: exceeded maximum command argc(%d)\n",
-                    MAX_CMD_ARGC);
+            fprintf(
+                stderr,
+                "ERROR: (tokenize_input) exceeded maximum command argc(%d)\n",
+                MAX_CMD_ARGC);
             return EXIT_FAILURE;
         }
         argv[*argc] = token;

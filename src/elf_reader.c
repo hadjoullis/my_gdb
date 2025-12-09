@@ -93,4 +93,5 @@ void load_ELF(char *filename, fn_t **fns) {
     }
 
     check_symtab(elf, fns);
+    elf_end(elf);
 }
