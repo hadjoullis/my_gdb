@@ -11,7 +11,8 @@
     CMD_ENTRY("h", "help", help, "Display this help message")                  \
     CMD_ENTRY("l", "list", list, "List current breakpoints")                   \
     CMD_ENTRY("q", "quit", quit, "Quit program")                               \
-    CMD_ENTRY("r", "run", run, "Run debugged program from start")              \
+    CMD_ENTRY("r", "run", run,                                                 \
+              "Run debugged program from start with provided arguments")       \
     CMD_ENTRY("si", "stepi", stepi, "Step one instruction exactly")            \
     CMD_ENTRY("sym", "symbols", symbols, "List all available symbols")
 
@@ -317,8 +318,41 @@ static void load_breakpoints(pid_t pid) {
     }
 }
 
+static char **create_argv(cmd_args_t *cmd_args) {
+    // cmd_args->argv[0] is "r" or "run", which we replace with target
+    // must also be NULL terminated
+#ifdef DEBUG
+    if (cmd_args->argc < MAX_CMD_ARGC) {
+        die("ERROR: (create_argv) argc should not exceed MAX_CMD_ARGC");
+    }
+#endif
+    static char *argv[MAX_CMD_ARGC];
+    argv[cmd_args->argc] = NULL;
+    argv[0] = strdup(cmd_args->target);
+    if (argv[0] == NULL) {
+        perror("(create_argv: strdup)");
+        return NULL;
+    }
+
+    for (int i = 1; i < cmd_args->argc; i++) {
+        argv[i] = strdup(cmd_args->argv[i]);
+        if (argv[i] == NULL) {
+            perror("(create_argv: strdup)");
+            for (int j = 0; j < i; i++) {
+                free(argv[j]);
+            }
+            return NULL;
+        }
+    }
+    return argv;
+}
+
 void run(cmd_args_t *cmd_args) {
-    char *argv[] = {cmd_args->target, NULL};
+    char **argv = create_argv(cmd_args);
+    if (argv == NULL) {
+        return;
+    }
+
     if (cmd_args->pid != 0) {
         kill(cmd_args->pid, SIGKILL);
         unset_breakpoints();
@@ -336,7 +370,9 @@ void run(cmd_args_t *cmd_args) {
         die("(run: execvp) %s", strerror(errno));
     }
     // parent
-    cmd_args->pid = cmd_args->pid;
+    for (int i = 0; argv[i] != NULL; i++) {
+        free(argv[i]);
+    }
     ptrace(PTRACE_SETOPTIONS, cmd_args->pid, 0, PTRACE_O_EXITKILL);
     waitpid(cmd_args->pid, NULL, 0);
 
