@@ -12,7 +12,8 @@
     CMD_ENTRY("l", "list", list, "List current breakpoints")                   \
     CMD_ENTRY("q", "quit", quit, "Quit program")                               \
     CMD_ENTRY("r", "run", run, "Run debugged program from start")              \
-    CMD_ENTRY("si", "stepi", stepi, "Step one instruction exactly")
+    CMD_ENTRY("si", "stepi", stepi, "Step one instruction exactly")            \
+    CMD_ENTRY("sym", "symbols", symbols, "List all available symbols")
 
 #define CMD_ENTRY(short, long, fn, description) {short, long, fn, description},
 cmd_entry_t cmd_registry[] = {CMD_ENTRIES{NULL, NULL, NULL, NULL}};
@@ -528,6 +529,13 @@ void stepi(cmd_args_t *cmd_args) {
                 die("(cont: getregs) %s", strerror(errno));
             }
         }
+    }
+}
+
+void symbols(cmd_args_t *cmd_args) {
+    fprintf(stderr, "Symbols found:\n");
+    for (int i = 0; cmd_args->fns->name[i] != NULL; i++) {
+        fprintf(stderr, "\t%s\n", cmd_args->fns->name[i]);
     }
 }
 

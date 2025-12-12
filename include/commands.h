@@ -47,5 +47,6 @@ void cont(cmd_args_t *cmd_args);
 void quit(cmd_args_t *cmd_args);
 void disas_wrapper(cmd_args_t *cmd_args);
 void stepi(cmd_args_t *cmd_args);
+void symbols(cmd_args_t *cmd_args);
 void help(cmd_args_t *cmd_args);
 #endif
